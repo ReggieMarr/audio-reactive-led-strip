@@ -29,6 +29,9 @@ For the purposes of this list "the program" refers to entire projects implementa
 
 ## System Design
 
+![System Architecure](https://raw.githubusercontent.com/reggiemarr/audio-oxide/branch/audio-oxide_system-diagram.png)
+
+
 ### Hardware
 
 ```plantuml
