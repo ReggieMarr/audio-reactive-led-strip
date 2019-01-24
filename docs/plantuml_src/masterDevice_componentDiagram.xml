@@ -1,0 +1,39 @@
+@startuml
+skinparam componentStyle uml2
+
+package configMod as "configSystem_pacMod" {
+    component assembler as "assembleSettings_subMod"
+}
+
+component main as "main_statMod"
+
+package visMod as "visualizer_pacMod" {
+    note "takes the parsed signal stream and applys a transform\n to get some array \nwhich represents the leds desired appearance" as N
+    package audioMod as "audioVisualizer_pacMod" {
+        component audioTransform as "audioTransform_subMod"
+    }
+
+    package videoMod as "videoVisualizer_pacMod" {
+        component videoTransform as "videoTransform_subMod"
+    }
+}
+
+package streamMod as "streamParser_pacMod" {
+    component fft as "fastFourieTransform_subMod"
+    component pulseAud as "pulseAudio_subMod"
+}
+
+package msgMod as "msgControl_pacMod" {
+    component msgHandler as "msgHandler_subMod"
+    component findDevices as "findDevices_subMod"
+}
+
+package setupMod as "setupAndControlIF_pacMod" {
+    component cliIF as "cliIF_subMod"
+    component hardwareIF as "hardwareIF_subMod"
+    component webIF as "webIF_subMod"
+}
+
+
+
+@enduml

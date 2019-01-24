@@ -29,14 +29,28 @@ For the purposes of this list "the program" refers to entire projects implementa
 
 ## System Design
 
-![System Architecure](https://github.com/ReggieMarr/audio-oxide/blob/master/audio-oxide_system-diagram.png)
+![System Architecure](docs/diagrams/audio-oxide_system-diagram.png)
 
 
 ### Hardware
 
-```plantuml
-
-
-
-```
 ### Software
+
+#### General Syntax rules
+
+##### Modules & Classes
+
+Modules are used to store a collection of classes. These modules are named to indicate their relationship with other modules.
+
+* Modules containing other modules within themselves are denoted with _pacMod.
+* Modules which are contained within a _pacMod are denoted with _subMod.
+* Modules which are standalone (meaning they do not contain other modules and are not contained within other modules) are denoted with _statMod.
+* Modules which may be standalone but may change are denoted with _dynMod.
+
+#### Master Software Design
+
+#### Module Component Diagram
+
+![Module Layout](docs/diagrams/masterDevice_componentDiagram.png)
+
+#### Slave Device Software Design
