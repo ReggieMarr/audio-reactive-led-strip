@@ -53,4 +53,12 @@ Modules are used to store a collection of classes. These modules are named to in
 
 ![Module Layout](docs/diagrams/masterDevice_componentDiagram.png)
 
+#### Module Startup Sequence
+
+![Module Startup](docs/diagrams/masterDevice_startup_sequenceDiagram.png)
+
 #### Slave Device Software Design
+
+#### Module Component Diagram
+
+![Module Layout](docs/diagrams/slaveDevice_componentDiagram.png)

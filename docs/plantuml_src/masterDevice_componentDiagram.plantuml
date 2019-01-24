@@ -1,14 +1,25 @@
-@startuml
+@startuml masterDevice CD
 skinparam componentStyle uml2
 
 package configMod as "configSystem_pacMod" {
     component assembler as "assembleSettings_subMod"
+    component startUpConfig as "startupConfig_subMod"
 }
+
+note bottom of configMod
+    * Contains startup functionality.
+    * Sets up visualizer style.
+    * Determines what (if any) devices are availible.
+end note
 
 component main as "main_statMod"
 
+note bottom of main
+    * Controls general program flow.
+end note
+
+
 package visMod as "visualizer_pacMod" {
-    note "takes the parsed signal stream and applys a transform\n to get some array \nwhich represents the leds desired appearance" as N
     package audioMod as "audioVisualizer_pacMod" {
         component audioTransform as "audioTransform_subMod"
     }
@@ -18,22 +29,44 @@ package visMod as "visualizer_pacMod" {
     }
 }
 
+note bottom of visMod
+    * Takes the parsed signal stream and applys a 
+    transform to get some array which represents 
+    the leds desired appearance.
+end note
+
 package streamMod as "streamParser_pacMod" {
     component fft as "fastFourieTransform_subMod"
     component pulseAud as "pulseAudio_subMod"
 }
+
+note bottom of streamMod
+    * Handles incoming audio streams.
+    * Applys FFT to audio stream.
+end note
 
 package msgMod as "msgControl_pacMod" {
     component msgHandler as "msgHandler_subMod"
     component findDevices as "findDevices_subMod"
 }
 
-package setupMod as "setupAndControlIF_pacMod" {
+note bottom of msgMod
+    * Manages recieved messages.
+    * Assembles Data into Messages.
+    * Sends Messages to slave devices.
+    * Parses recieved messages and handles data.
+end note
+
+package ifMod as "userIF_pacMod" {
     component cliIF as "cliIF_subMod"
     component hardwareIF as "hardwareIF_subMod"
     component webIF as "webIF_subMod"
+    interface genIF as "iFHandler_IF"
 }
 
-
+note bottom of ifMod
+    * Contains all interface modules.
+    * Will take commands from the most recently active interface.
+end note
 
 @enduml
