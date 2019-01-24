@@ -1,0 +1,35 @@
+@startuml masterDevice_startup SD
+participant main as "main_statMod"
+participant configMod as "configSystem_pacMod"
+participant ifMod as "userIF_pacMod" 
+participant streamMod as "streamParser_pacMod"
+participant msgMod as "msgControl_pacMod"
+participant visMod as "visualizer_pacMod"
+
+main -> configMod : Engage Startup sequence
+
+activate configMod
+loop Start Modules
+    configMod -> ifMod : Engage Startup sequence
+    activate ifMod
+    ifMod -> configMod : Return IF Info
+    deactivate
+    configMod -> streamMod : Engage Startup sequence
+    activate streamMod
+    streamMod -> configMod : Return stream Info
+    deactivate
+    configMod -> msgMod : Engage Startup sequence
+    activate msgMod
+    msgMod -> configMod : Return device Info
+    deactivate
+        configMod -> visMod : Engage Startup sequence
+    activate visMod
+    visMod -> configMod : Return visualizer Info
+    deactivate
+end
+configMod -> main : Config Status
+deactivate configMod
+
+
+
+@enduml

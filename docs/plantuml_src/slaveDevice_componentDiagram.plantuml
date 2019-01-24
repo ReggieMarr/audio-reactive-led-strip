@@ -1,0 +1,29 @@
+@startuml
+skinparam componentStyle uml2
+
+package configMod as "configDevice_pacMod" {
+    component assembler as "assembleSettings_subMod"
+    component startUpConfig as "startupConfig_subMod"
+}
+
+component main as "main_statMod"
+
+package visMod as "visualizer_pacMod" {
+    component assembleLedCmd as "assembleLedCmd_subMod"
+}
+
+package ioMod as "io_pacMod" {
+    component ledDriver as "ledDriver_subMod"
+}
+
+package streamMod as "streamParser_pacMod" {
+    component fft as "fastFourieTransform_subMod"
+    component pulseAud as "pulseAudio_subMod"
+}
+
+package msgMod as "msgControl_pacMod" {
+    component msgHandler as "msgHandler_subMod"
+}
+
+
+@enduml
