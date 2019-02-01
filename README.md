@@ -51,7 +51,7 @@ Modules are used to store a collection of classes. These modules are named to in
 
 #### Module Component Diagram
 
-![Module Layout](docs/diagrams/masterDevice_componentDiagram.png)
+![Module Layout](out/docs/plantuml_src/masterDevice_componentDiagram/masterDevice_CD.png)
 
 #### Module Startup Sequence
 
