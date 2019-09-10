@@ -1,0 +1,21 @@
+[package]
+name = "masterCtrl"
+version = "0.1.0"
+authors = ["reggiemarr <reginald.t.marr@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
+protocol = "3.1"
+protocol-derive = "3.1"
+rand = "0.3"
+portaudio = "0.7"
+num = "*"
+glium = "0.19.0"
+rustfft = "3.0.0"
+termcolor = "1"
+# clap = "2.26.0"
+# tokio = "0.1"
+# futures = "0.1"
