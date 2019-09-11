@@ -1,4 +1,6 @@
 #version 150
+//geometry shader, takes the angular velocity from the vertext shader
+//sends its output to the fragement shader
 
 uniform uint n;
 uniform vec2 window;

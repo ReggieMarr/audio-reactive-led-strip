@@ -1,4 +1,5 @@
 #version 150
+// fragement shader
 
 uniform bool colorize;
 uniform float base_hue;
@@ -19,6 +20,8 @@ vec3 hsv2rgb(vec3 c) {
 }
 
 void main() {
+    //returns a linear interpolation using mix(x,y,a)
+    //x * (1-a) + y * a
     float alpha = mix(1.0 - decay, 1.0, position);
     if (colorize) {
         float phase = log2(angle.x);

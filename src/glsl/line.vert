@@ -1,4 +1,5 @@
 #version 150
+//vertext shader, first shader in the pipeline
 
 uniform vec2 window;
 uniform uint n;
