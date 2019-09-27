@@ -48,7 +48,7 @@ pub struct Uniforms {
 impl Default for Uniforms {
     fn default() -> Uniforms {
         Uniforms {
-            decay           : 0.1,
+            decay           : 0.3,
             thickness       : 10.0,
             min_thickness   : 1.5,
             thinning        : 0.05,

@@ -9,7 +9,7 @@ use std::{thread, time};
 use std::vec::Vec;
 pub mod device_modules;
 mod audio;
-use audio::{init_audio, Vec2};
+use audio::{init_audio, init_audio_simple, Vec2, Vec4, SAMPLE_RATE};
 
 use device_modules::config::*;
 use std::io;
@@ -17,6 +17,10 @@ use std::sync::mpsc::*;
 
 mod visualizer;
 use visualizer::display;
+
+use std::f64;
+use std::f32;
+
 
 // mod plotting;
 // use plotting::*;
@@ -116,8 +120,37 @@ struct Pixel {
     // }
 // }
 
+//Dont know how to return a mutable result which contains a vec
+// fn get_frequencies(resolution : f64) -> std::io::Result<Vec<64>> {
+//     let mut freq_vec : Vec<f64> = Vec::with_capacity(fft_size);
+//     for (bin_idx, _) in (0..fft_size).enumerate(){
+//         freq_vec.push(bin_idx * freq_res);
+//     }
+// }
+
+fn get_freq_chart(audio_buff : &Vec<Vec4>, vec_size : usize, use_polar : bool) -> std::io::Result<(Vec<(f32, f32)>)> {
+    let mut freq_mag : Vec<(f32,f32)> = Vec::with_capacity(vec_size);
+    for audio_packet in audio_buff.iter() {
+        let real_part = audio_packet.vec[0];
+        let im_part = audio_packet.vec[1];
+        //Unused for now
+        let freq = audio_packet.vec[2];
+        // let ang_velocity = audio_packet.vec[2];
+        // let ang_noise = audio_packet.vec[3];
+        if use_polar {
+            let mag_polar = f32::sqrt(real_part.exp2() + im_part.exp2());
+            let mag_db_polar = 20.0f32*(2.0f32*mag_polar/vec_size as f32).abs().log10();
+            freq_mag.push((freq, mag_db_polar));
+        } else {
+            let mag_db_rect = 20.0f32*(((2.0f32*im_part/vec_size as f32).abs()).log10());
+            freq_mag.push((freq, mag_db_rect));
+        }
+        // println!("mag: {:?}", 20.0f32*(mag.log10()));
+    }
+    Ok(freq_mag)
+}
+
 fn main() -> std::io::Result<()> {
-    println!("No Config Found! Please setup the device config");
     {
         let esp_if = Devicecfg::default();
         // let esp_addr = SocketAddr::new(esp_if.device_specific_cfg.udp_ip, esp_if.device_specific_cfg.udp_port);
@@ -126,36 +159,54 @@ fn main() -> std::io::Result<()> {
         let mut stdout = StandardStream::stdout(ColorChoice::Always);
         // writeln!(&mut stdout, "green text!");
         let mut box_buff : termcolor::Buffer;// = "█";
-        for led_idx in init_strip {
-            // let pixel = Pixel::new(led_idx);
-            stdout.set_color(ColorSpec::new().set_fg(Some(Color::Rgb(led_idx[0], led_idx[1], led_idx[2]))));
-            println!("▀");
-            // println!("led_val: {:?}", led_idx);
-            update_esp8266(esp_addr, &led_idx)?;
-        }
+        // for led_idx in init_strip {
+        //     // let pixel = Pixel::new(led_idx);
+        //     stdout.set_color(ColorSpec::new().set_fg(Some(Color::Rgb(led_idx[0], led_idx[1], led_idx[2]))));
+        //     println!("▀");
+        //     // println!("led_val: {:?}", led_idx);
+        //     update_esp8266(esp_addr, &led_idx)?;
+        // }
         
-        let (mut stream, buffers) = init_audio(&esp_if).unwrap();
-        stream.start().expect("Unable to open stream");
-        thread::sleep(time::Duration::from_secs(3));
+        //get the frequency portion of the frequencyxmagnitude graph
+        let fft_size : usize = 1024;
+
+        let freq_res = SAMPLE_RATE as f32/fft_size as f32; //frequency resolution
+        let mut freq_vec : Vec<f32> = Vec::with_capacity(fft_size);
+        for (bin_idx, _) in (0..fft_size).enumerate(){
+            freq_vec.push(bin_idx as f32 * freq_res);
+        }
+        //Start the audio stream
+        let (mut stream, buffers) = init_audio_simple(&esp_if).unwrap();
+        // let (mut stream, buffers) = init_audio(&esp_if).unwrap();
+
+        stream.start().expect("Unable the open stream");
+        thread::sleep(time::Duration::from_secs(5));
         let handle = thread::spawn(move || {
             let mut index = 0;
-            while (!buffers[index].lock().unwrap().rendered) {
-                let mut buffer = buffers[index].lock().unwrap();
-                // ys_data.copy_from_slice(&buffer.analytic);
-                buffer.rendered = true;
-                index = (index + 1) % buffers.len();
-                for buff_idx in &buffer.analytic {
-                    println!("buf: {:?}", buff_idx);
-    
+            // for _ in (0..1024-259) {
+                while !buffers[index].lock().unwrap().rendered {
+                    let mut buffer = buffers[index].lock().unwrap();
+                    //This is 258 since it needs to store the full range + 3 values to maintain
+                    //Continuity
+                    // ys_data.copy_from_slice(&buffer.analytic);
+                    buffer.rendered = true;
+                    index = (index + 1) % buffers.len();
+                    //here we borrow a reference to buffer.analytic 
+                    //this allows get_freq_chart to use the data but ensure nothing else 
+                    //can manipulate it
+                    // println!("size is {:?}",buffer.analytic.len());
+                    //make sure to unwrap Results to properly iterate
+                    let freq_mag = get_freq_chart(&buffer.analytic, fft_size, false).unwrap();
+                    // println!("From buffer");
+                    for val in freq_mag.iter() {
+                        println!("{:?}, {:?}", val.0, val.1);
+                    }
                 }
-            }
-
-            
+            // }
         });
         // display(buffers);
-        thread::sleep(time::Duration::from_secs(3));
-        // handle.join().unwrap();   
-        stream.stop();
+        handle.join().unwrap();   
+        // stream.stop();
 
     }
     Ok(()) 
@@ -167,6 +218,7 @@ fn colour_from_vert4(base_hue : f32, decay : f32, desaturation : f32, relative_l
 
     Ok(colour)
 }
+
 
 fn update_esp8266(socket_address : SocketAddr, esp_packet : &[u8]) -> std::io::Result<()> {
     /*
@@ -189,6 +241,13 @@ fn update_esp8266(socket_address : SocketAddr, esp_packet : &[u8]) -> std::io::R
     }
     Ok(())
 }
+
+extern crate itertools;
+use itertools::Itertools;
+
+// fn split_audio_spectrum(audio_spectrum : &Vec<f32>) -> std::io::Result<([f32;3])> {
+    
+// }
 
 /*
     From Wavelength to RGB in Python - https://www.noah.org/wiki/Wavelength_to_RGB_in_Python
@@ -221,42 +280,7 @@ fn update_esp8266(socket_address : SocketAddr, esp_packet : &[u8]) -> std::io::R
         rod:    550 nm in bright daylight, 498 nm when dark adapted. 
                 Rods adapt to low light conditions by becoming more sensitive.
                 Peak frequency response shifts to 498 nm.
-    if wavelength >= 380 and wavelength <= 440:
-        attenuation = 0.3 + 0.7 * (wavelength - 380) / (440 - 380)
-        R = ((-(wavelength - 440) / (440 - 380)) * attenuation) ** gamma
-        G = 0.0
-        B = (1.0 * attenuation) ** gamma
-    elif wavelength >= 440 and wavelength <= 490:
-        R = 0.0
-        G = ((wavelength - 440) / (490 - 440)) ** gamma
-        B = 1.0
-    elif wavelength >= 490 and wavelength <= 510:
-        R = 0.0
-        G = 1.0
-        B = (-(wavelength - 510) / (510 - 490)) ** gamma
-    elif wavelength >= 510 and wavelength <= 580:
-        R = ((wavelength - 510) / (580 - 510)) ** gamma
-        G = 1.0
-        B = 0.0
-    elif wavelength >= 580 and wavelength <= 645:
-        R = 1.0
-        G = (-(wavelength - 645) / (645 - 580)) ** gamma
-        B = 0.0
-    elif wavelength >= 645 and wavelength <= 750:
-        attenuation = 0.3 + 0.7 * (750 - wavelength) / (750 - 645)
-        R = (1.0 * attenuation) ** gamma
-        G = 0.0
-        B = 0.0
-    else:
-        R = 0.0
-        G = 0.0
-        B = 0.0
-    R *= 255
-    G *= 255
-    B *= 255
-    return (int(R), int(G), int(B))
 */
-
 
 const MINIMUM_VISIBLE_WAVELENGTH :u16 = 380;
 const MAXIMUM_VISIBLE_WAVELENGTH :u16 = 740;
@@ -266,16 +290,6 @@ fn wavelength_to_rgb(wavelength : f32, gamma : f32) -> std::io::Result<([u8;3])>
     let green : f32;
     let blue : f32;
 
-    /*
-        Color 	Wavelength (nm)
-        red 	625 - 740
-        Orange 	590 - 625
-        Yellow 	565 - 590
-        green 	520 - 565
-        Cyan 	500 - 520
-        blue 	435 - 500
-        Violet 	380 - 435
-    */
     if wavelength > 440.0 && wavelength < 490.0 {
         let attenuation = 0.3 + 0.7*(wavelength 
             - MINIMUM_VISIBLE_WAVELENGTH as f32);
@@ -321,6 +335,15 @@ fn wavelength_to_rgb(wavelength : f32, gamma : f32) -> std::io::Result<([u8;3])>
     let rgb = [(255.0 * red) as u8, (255.0 * green) as u8, (255.0 * blue) as u8];
 
     Ok(rgb)
+}
+
+fn map_synthesia(audio_range : [f32; 2], audio_value : f32) -> std::io::Result<(f32)> {
+//affline transform
+//for now audio_range[0] is min and audio_range[1] is max
+    let res = (audio_value - audio_range[0]) 
+        * ((MAXIMUM_VISIBLE_WAVELENGTH-MINIMUM_VISIBLE_WAVELENGTH) as f32)
+        /(audio_range[1] - audio_range[0]) + MINIMUM_VISIBLE_WAVELENGTH as f32;
+    Ok(res)
 }
 // Receives a single datagram message on the socket. If `buf` is too small to hold
 // the message, it will be cut off.
