@@ -1,5 +1,7 @@
 extern crate serde_derive;
 extern crate rand;
+use std::mem::size_of;
+use std::mem::size_of_val;
 use termcolor::{Color, Ansi, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use std::io::Write;
 use std::option;
@@ -20,6 +22,9 @@ use visualizer::display;
 
 use std::f64;
 use std::f32;
+use std::mem;
+extern crate serde_json;
+use serde_json;
 
 
 // mod plotting;
@@ -128,8 +133,17 @@ struct Pixel {
 //     }
 // }
 
-fn get_freq_chart(audio_buff : &Vec<Vec4>, vec_size : usize, use_polar : bool) -> std::io::Result<(Vec<(f32, f32)>)> {
-    let mut freq_mag : Vec<(f32,f32)> = Vec::with_capacity(vec_size);
+#[derive(Debug)]
+struct FrequencyBuff {
+    frequencies : Vec<f32>,
+    amplitudes : Vec<f32>
+}
+
+fn get_freq_chart(audio_buff : &Vec<Vec4>, vec_size : usize, use_polar : bool) -> std::io::Result<(FrequencyBuff)> {
+    let mut freq_buff = FrequencyBuff {
+        frequencies : Vec::with_capacity(audio_buff.len()),
+        amplitudes : Vec::with_capacity(audio_buff.len())
+    };
     for audio_packet in audio_buff.iter() {
         let real_part = audio_packet.vec[0];
         let im_part = audio_packet.vec[1];
@@ -137,17 +151,27 @@ fn get_freq_chart(audio_buff : &Vec<Vec4>, vec_size : usize, use_polar : bool) -
         let freq = audio_packet.vec[2];
         // let ang_velocity = audio_packet.vec[2];
         // let ang_noise = audio_packet.vec[3];
+        freq_buff.frequencies.push(freq);
         if use_polar {
             let mag_polar = f32::sqrt(real_part.exp2() + im_part.exp2());
-            let mag_db_polar = 20.0f32*(2.0f32*mag_polar/vec_size as f32).abs().log10();
-            freq_mag.push((freq, mag_db_polar));
+                let mag_db_polar = 20.0f32*(2.0f32*mag_polar/vec_size as f32).abs().log10();
+                if mag_db_polar.is_infinite() {
+                    freq_buff.amplitudes.push(0.0f32);
+                }
+                else {
+                    freq_buff.amplitudes.push(mag_db_polar);
+                }
         } else {
-            let mag_db_rect = 20.0f32*(((2.0f32*im_part/vec_size as f32).abs()).log10());
-            freq_mag.push((freq, mag_db_rect));
+                let mag_db_rect = 20.0f32*(((2.0f32*im_part/vec_size as f32).abs()).log10());
+                if mag_db_rect.is_infinite() {
+                    freq_buff.amplitudes.push(0.0f32);
+                }
+                else {
+                    freq_buff.amplitudes.push(mag_db_rect);
+                }
         }
-        // println!("mag: {:?}", 20.0f32*(mag.log10()));
     }
-    Ok(freq_mag)
+    Ok(freq_buff)
 }
 
 fn main() -> std::io::Result<()> {
@@ -198,9 +222,15 @@ fn main() -> std::io::Result<()> {
                     //make sure to unwrap Results to properly iterate
                     let freq_mag = get_freq_chart(&buffer.analytic, fft_size, false).unwrap();
                     // println!("From buffer");
-                    for val in freq_mag.iter() {
-                        println!("{:?}, {:?}", val.0, val.1);
-                    }
+                    // for amp in freq_mag.amplitudes {
+                    //     println!("{:?}", amp);
+                    // }
+                    let led_size = 125;
+                    let sample_packets = make_weighted_bar_msg(&freq_mag.amplitudes, 0, led_size).unwrap();
+                    let packet_json = serde_json::from_slice(sample_packets.as_slice());
+                    // for led in sample_packets {
+                    //     println!("{:?}", led);
+                    // }
                 }
             // }
         });
@@ -242,12 +272,54 @@ fn update_esp8266(socket_address : SocketAddr, esp_packet : &[u8]) -> std::io::R
     Ok(())
 }
 
-extern crate itertools;
-use itertools::Itertools;
+//this should be called from multiple threads
+fn make_weighted_bar_msg(sample : &Vec<f32>, starting_idx : usize, ending_idx : usize) 
+    -> std::io::Result<(Vec<(u8, [u8;3])>)> {
+    assert!(starting_idx < ending_idx);
+    let mut colour_msg : Vec<(u8, [u8;3])> = Vec::with_capacity(ending_idx - starting_idx);
+    for (idx, _) in (starting_idx..ending_idx).enumerate() {
+        //do this better
+        let colour_sample = audio_to_weighted_colour(sample).unwrap();
+        colour_msg.push((idx as u8, colour_sample));
+    }
+    Ok(colour_msg)
+}
 
-// fn split_audio_spectrum(audio_spectrum : &Vec<f32>) -> std::io::Result<([f32;3])> {
-    
-// }
+//takes a vector representing the amplitude of sampled frequencies
+//determines a colour representing the sample
+fn audio_to_weighted_colour(spectrum_sample : &Vec<f32>) -> std::io::Result<([u8;3])> {
+   let ratio = 3;
+   let colour_byte = 255.0f32;
+   let split_to : usize = spectrum_sample.len()/ratio as usize;
+   let mut weights = [0.0f32;3];
+   //determines the sum of the amplitude of all sampled frequencies
+   let mut sub_iter = 0;
+   for (idx, iter) in spectrum_sample.iter().enumerate() {
+       if idx == split_to || idx == split_to*(ratio-1) {
+           sub_iter += 1;
+       }
+       if (weights[sub_iter] + iter.abs()).is_nan() {
+            weights[sub_iter] += 0.0f32;
+       }
+       else {
+            weights[sub_iter] += iter.abs();
+       }
+   }
+   let weight_sum : f32 = weights.iter().sum();
+   let average_sum = weight_sum/weights.len() as f32;
+   let colour_ratio = colour_byte/ratio as f32;
+   //for each third of the amplitude determine 
+   let mut byte_weights = [0u8;3];
+   for (idx, new_weight) in weights.iter_mut().enumerate() {
+    //could also be done as 
+   // for new_weight in &mut weights {
+       let weight_ratio = *new_weight/average_sum;
+       *new_weight = weight_ratio * colour_ratio;
+       byte_weights[idx] = *new_weight as u8;
+   }
+
+   Ok(byte_weights) 
+}
 
 /*
     From Wavelength to RGB in Python - https://www.noah.org/wiki/Wavelength_to_RGB_in_Python

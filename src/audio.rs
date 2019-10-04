@@ -71,7 +71,7 @@ pub fn init_audio_simple(config: &Devicecfg) -> Result<(PortAudioStream, MultiBu
 
     let def_input = pa.default_input_device().expect("Unable to get default device");
     let input_info = pa.device_info(def_input).expect("Unable to get device info");
-    println!("Default input device name: {}", input_info.name);
+    // println!("Default input device name: {}", input_info.name);
 
     let latency = input_info.default_low_input_latency;
     // Set parameters for the stream settings.
@@ -92,7 +92,8 @@ pub fn init_audio_simple(config: &Devicecfg) -> Result<(PortAudioStream, MultiBu
         buffers.push(Mutex::new(AudioBuffer {
             rendered: true,
             //why is this buffer_size + 3?
-            analytic: vec![Vec4 {vec: [0.0, 0.0, 0.0, 0.0]}; buffer_size + 3],
+            // analytic: vec![Vec4 {vec: [0.0, 0.0, 0.0, 0.0]}; buffer_size + 3],
+            analytic: vec![Vec4 {vec: [0.0, 0.0, 0.0, 0.0]}; fft_size],
         }));
     }
     //This creates a thread safe reference counting pointer to buffers
@@ -112,13 +113,20 @@ pub fn init_audio_simple(config: &Devicecfg) -> Result<(PortAudioStream, MultiBu
         let mut complex_freq_buffer = vec![Complex::new(0.0f32, 0.0); fft_size];
         let mut complex_analytic_buffer = vec![Complex::new(0.0f32, 0.0); fft_size];
 
-        let mut n = fft_size - buffer_size;
-        if n % 2 == 0 {
-            if n != 0 {
+        let use_analytic_filt = false;
+        let mut analytic_size = fft_size;
+        let mut analytic : Vec<Complex<f32>> = Vec::with_capacity(analytic_size);
+
+        if use_analytic_filt {
+            let mut n = fft_size - buffer_size;
+            if n % 2 == 0 {
                 n -= 1;
             }
+            analytic.clear();
+            analytic = make_analytic(n, fft_size);
+            analytic_size = buffer_size + 3;
         }
-        let analytic = make_analytic(n, fft_size);
+        let mut analytic_buffer = vec![Vec4 {vec: [0.0, 0.0, 0.0, 0.0]}; analytic_size];
         let mut fft_planner = FFTplanner::new(false);
         let fft = fft_planner.plan_fft(fft_size);
         // let mut ifft_planner = FFTplanner::new(true);
@@ -153,29 +161,42 @@ pub fn init_audio_simple(config: &Devicecfg) -> Result<(PortAudioStream, MultiBu
             //the analytic array acts as a filter, removing the negative and dc portions
             //of the signal as well as filtering out the nyquist portion of the signal
             //Also applies the hamming window here 
-            for (x, y) in analytic.iter().zip(complex_freq_buffer.iter_mut()) {
-                *y = *x * *y;
-            }
-            let test_freq = complex_freq_buffer.clone();
 
-            // for (freq_idx, freq) in test_freq.iter().take(fft_size/2).enumerate() {
-            //     let bin = SAMPLE_RATE as f32 / fft_size as f32;
-            //     let freq_mag = f32::sqrt((freq.re as f32).exp2() + (freq.im as f32).exp2())/fft_size as f32;
-            //     let freq_val = bin*freq_idx as f32;
-            //     println!("{:?}, {:?}", freq_val as f32, (20.0f32*((2.0f32*freq.im/fft_size as f32).abs().log10())));
-            // }
+            // By applying the inverse fourier transform we transform the signal from the frequency domain back into the 
+            if use_analytic_filt {
+                for (x, y) in analytic.iter().zip(complex_freq_buffer.iter_mut()) {
+                    *y = *x * *y;
+                }
+            }
             // By applying the inverse fourier transform we transform the signal from the frequency domain back into the 
             // time domain. However now this signal can be represented as a series of points on a unit circle.
             // ifft.process(&mut complex_freq_buffer[..], &mut complex_analytic_buffer[..]);
-            analytic_buffer[0] = analytic_buffer[buffer_size];
-            analytic_buffer[1] = analytic_buffer[buffer_size + 1];
-            analytic_buffer[2] = analytic_buffer[buffer_size + 2];
+
+            if false {
+                let test_freq = complex_freq_buffer.clone();
+                for (freq_idx, freq) in test_freq.iter().take(fft_size/2).enumerate() {
+                    let bin = SAMPLE_RATE as f32 / fft_size as f32;
+                    // let freq_mag = f32::sqrt((freq.re as f32).exp2() + (freq.im as f32).exp2())/fft_size as f32;
+                    let freq_val = bin*freq_idx as f32;
+                    if freq_val > 200.0f32 && freq_val < 20_000.0f32 {
+                        println!("{:?}, {:?}", freq_val as f32, (20.0f32*((2.0f32*freq.im/fft_size as f32).abs().log10())));
+                    }
+                }
+            }
+            //here we are filling the start of our array with the ned of the last one so that we have a continuous stream
+            if use_analytic_filt {
+                analytic_buffer[0] = analytic_buffer[buffer_size];
+                analytic_buffer[1] = analytic_buffer[buffer_size + 1];
+                analytic_buffer[2] = analytic_buffer[buffer_size + 2];
+            }
+            // time domain. However now this signal can be represented as a series of points on a unit circle.
+            // ifft.process(&mut complex_freq_buffer[..], &mut complex_analytic_buffer[..]);
             let scale = fft_size as f32;
             let freq_res = SAMPLE_RATE as f32 / scale;
             // for (&x, y) in complex_analytic_buffer[fft_size - buffer_size..].iter().zip(analytic_buffer[3..].iter_mut()) {
             //this takes 256 points from the complex_freq_buffer into the analytic_buffer
             // for (&x, y) in complex_freq_buffer[(fft_size - buffer_size)..].iter().zip(analytic_buffer[3..].iter_mut()) {
-            let freq_iter = complex_freq_buffer[..(fft_size - buffer_size)].iter().zip(analytic_buffer[3..].iter_mut());
+            let freq_iter = complex_freq_buffer.iter().zip(analytic_buffer.iter_mut());
             for (freq_idx, (&x, y)) in freq_iter.enumerate() {
                 let diff = x - prev_input; // vector
                 prev_input = x;
@@ -189,11 +210,8 @@ pub fn init_audio_simple(config: &Devicecfg) -> Result<(PortAudioStream, MultiBu
 
                 *y = Vec4 { vec: [
                     // save the scaling for later
-                    // x.re / scale,
-                    // x.im / scale,
                     x.re,
                     x.im,
-                    // output.exp2(), // smoothed angular velocity
                     sample_freq, // smoothed angular velocity
                     noise_lp((angle - output).abs()), // average angular noise
                 ]};
@@ -271,19 +289,26 @@ pub fn init_audio(config: &Devicecfg) -> Result<(PortAudioStream, MultiBuffer), 
         let (sender, receiver) = mpsc::channel();
         let gain = 2.0;//config.audio.gain;
         let buffers = buffers.clone();
-        let mut analytic_buffer = vec![Vec4 {vec: [0.0, 0.0, 0.0, 0.0]}; buffer_size + 3];
 
         let mut time_index = 0;
         let mut time_ring_buffer = vec![Complex::new(0.0, 0.0); 2 * fft_size];
         // this gets multiplied to convolve stuff
         let mut complex_freq_buffer = vec![Complex::new(0.0f32, 0.0); fft_size];
         let mut complex_analytic_buffer = vec![Complex::new(0.0f32, 0.0); fft_size];
+        let use_analytic_filt = false;
+        let mut analytic_size = fft_size;
+        let mut analytic : Vec<Complex<f32>> = Vec::with_capacity(analytic_size);
 
-        let mut n = fft_size - buffer_size;
-        if n % 2 == 0 {
-            n -= 1;
+        if use_analytic_filt {
+            let mut n = fft_size - buffer_size;
+            if n % 2 == 0 {
+                n -= 1;
+            }
+            analytic.clear();
+            analytic = make_analytic(n, fft_size);
+            analytic_size = buffer_size + 3;
         }
-        let analytic = make_analytic(n, fft_size);
+        let mut analytic_buffer = vec![Vec4 {vec: [0.0, 0.0, 0.0, 0.0]}; analytic_size];
         let mut fft_planner = FFTplanner::new(false);
         let fft = fft_planner.plan_fft(fft_size);
         // let mut ifft_planner = FFTplanner::new(true);
@@ -316,17 +341,21 @@ pub fn init_audio(config: &Devicecfg) -> Result<(PortAudioStream, MultiBuffer), 
 
             //the analytic array acts as a filter, removing the negative and dc portions
             //of the signal as well as filtering out the nyquist portion of the signal
-            for (x, y) in analytic.iter().zip(complex_freq_buffer.iter_mut()) {
-                *y = *x * *y;
+            if use_analytic_filt {
+                for (x, y) in analytic.iter().zip(complex_freq_buffer.iter_mut()) {
+                    *y = *x * *y;
+                }
             }
             // By applying the inverse fourier transform we transform the signal from the frequency domain back into the 
             // time domain. However now this signal can be represented as a series of points on a unit circle.
             // ifft.process(&mut complex_freq_buffer[..], &mut complex_analytic_buffer[..]);
 
             //here we are filling the start of our array with the ned of the last one so that we have a continuous stream
-            analytic_buffer[0] = analytic_buffer[buffer_size];
-            analytic_buffer[1] = analytic_buffer[buffer_size + 1];
-            analytic_buffer[2] = analytic_buffer[buffer_size + 2];
+            if use_analytic_filt {
+                analytic_buffer[0] = analytic_buffer[buffer_size];
+                analytic_buffer[1] = analytic_buffer[buffer_size + 1];
+                analytic_buffer[2] = analytic_buffer[buffer_size + 2];
+            }
             let scale = fft_size as f32;
             // for (&x, y) in complex_analytic_buffer[fft_size - buffer_size..].iter().zip(analytic_buffer[3..].iter_mut()) {
             for (&x, y) in complex_freq_buffer[fft_size - buffer_size..].iter().zip(analytic_buffer[3..].iter_mut()) {
