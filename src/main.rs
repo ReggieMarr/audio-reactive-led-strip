@@ -1,5 +1,6 @@
-extern crate serde_derive;
 extern crate rand;
+use bincode::serde::serialize;
+use bincode::serde::serialize;
 use std::mem::size_of;
 use std::mem::size_of_val;
 use termcolor::{Color, Ansi, ColorChoice, ColorSpec, StandardStream, WriteColor};
@@ -23,8 +24,11 @@ use visualizer::display;
 use std::f64;
 use std::f32;
 use std::mem;
+#[macro_use] extern crate serde_derive;
 extern crate serde_json;
-use serde_json;
+// use serde_json;
+extern crate bincode;
+use serde::ser::{Serialize, SerializeStruct, Serializer};//, Deserialize, Deserializer};
 
 
 // mod plotting;
@@ -95,43 +99,43 @@ fn make_random_led_vec(strip_size : usize) -> Vec<Vec<u8>> {
         test_leds
 }
 
+// #[derive(Deserialize, Serialize)]
 struct Pixel {
     //Named with a U because 🇨🇦
     pub colour : [u8;3],
-    pub stdout_symbol : String,
-    colour_spec : ColorSpec,
+    //should later expand this to represent the pixel in optionally one, two, or 3 dimensions
+    pub index : u8
 }
 
-// impl Pixel {
-    // fn new(setup_colour : [u8;3], symbol : Option<String>) -> Pixel {
-        // let mut symbol_defined = false;
-        // if let Some(x) = symbol {
-            // symbol_defined = true;
-        // }
-                // let std_out = "symbol";
-        // match symbol_defined {
-            // true => {
-                // let std_out = "symbol";
-            // }   
-            // _ => {
-                // let std_out = " ";
-            // }
-        // }
-        // Pixel { 
-            // colour : setup_colour,
-            // stdout_symbol : std_out,
-            // colour_spec : ColorSpec::new().set_fg(Some(Colour::Rgb(setup_colour)))
-        // }
-    // }
-// }
+impl Pixel {
+    fn new(setup_colour : Option<[u8;3]>, setup_index : Option<u8>) -> Pixel {
+        let mut prologue_colour = [0u8;3];
+        if let Some(x) = setup_colour {
+            prologue_colour = setup_colour.unwrap();
+        }
+        let mut prologue_index = 0u8;
+        if let Some(x) = setup_index {
+            prologue_index = setup_index.unwrap();
+        }
+        Pixel { 
+            colour : prologue_colour,
+            index : prologue_index
+        }
+    }
+}
 
-//Dont know how to return a mutable result which contains a vec
-// fn get_frequencies(resolution : f64) -> std::io::Result<Vec<64>> {
-//     let mut freq_vec : Vec<f64> = Vec::with_capacity(fft_size);
-//     for (bin_idx, _) in (0..fft_size).enumerate(){
-//         freq_vec.push(bin_idx * freq_res);
-//     }
-// }
+impl serde::ser::Serialize for Pixel {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // 3 is the number of fields in the struct.
+        let mut state = serializer.serialize_struct("Pixel", 2)?;
+        state.serialize_field("colour", &self.colour)?;
+        state.serialize_field("index", &self.index)?;
+        state.end()
+    }
+}
 
 #[derive(Debug)]
 struct FrequencyBuff {
@@ -173,6 +177,15 @@ fn get_freq_chart(audio_buff : &Vec<Vec4>, vec_size : usize, use_polar : bool) -
     }
     Ok(freq_buff)
 }
+
+fn send_pixel_packet(data : &Vec<f32>, led_num : usize) -> std::io::Result<()> {
+    
+    let sample_packet = make_weighted_bar_msg(data, 0, led_num).unwrap();
+    let serialized_packet = bincode::serde::serialize(&sample_packet, bincode::SizeLimit::Infinite);
+    // let sample_bytes = bincode::serde::serialize(&sample_packet, bincode::SizeLimit::Infinite);
+    Ok(())
+}
+
 
 fn main() -> std::io::Result<()> {
     {
@@ -221,16 +234,7 @@ fn main() -> std::io::Result<()> {
                     // println!("size is {:?}",buffer.analytic.len());
                     //make sure to unwrap Results to properly iterate
                     let freq_mag = get_freq_chart(&buffer.analytic, fft_size, false).unwrap();
-                    // println!("From buffer");
-                    // for amp in freq_mag.amplitudes {
-                    //     println!("{:?}", amp);
-                    // }
-                    let led_size = 125;
-                    let sample_packets = make_weighted_bar_msg(&freq_mag.amplitudes, 0, led_size).unwrap();
-                    let packet_json = serde_json::from_slice(sample_packets.as_slice());
-                    // for led in sample_packets {
-                    //     println!("{:?}", led);
-                    // }
+                    send_pixel_packet(&freq_mag.amplitudes, 125);
                 }
             // }
         });
@@ -274,13 +278,15 @@ fn update_esp8266(socket_address : SocketAddr, esp_packet : &[u8]) -> std::io::R
 
 //this should be called from multiple threads
 fn make_weighted_bar_msg(sample : &Vec<f32>, starting_idx : usize, ending_idx : usize) 
-    -> std::io::Result<(Vec<(u8, [u8;3])>)> {
+    -> std::io::Result<(Vec<Pixel>)> {
     assert!(starting_idx < ending_idx);
-    let mut colour_msg : Vec<(u8, [u8;3])> = Vec::with_capacity(ending_idx - starting_idx);
+    let mut colour_msg : Vec<Pixel> = Vec::with_capacity(ending_idx - starting_idx);
     for (idx, _) in (starting_idx..ending_idx).enumerate() {
         //do this better
         let colour_sample = audio_to_weighted_colour(sample).unwrap();
-        colour_msg.push((idx as u8, colour_sample));
+        //TODO do this better
+        let sample_array = [idx as u8, colour_sample[0], colour_sample[1], colour_sample[2]];
+        colour_msg.push(Pixel::new(Some(colour_sample), Some(idx as u8)));
     }
     Ok(colour_msg)
 }
