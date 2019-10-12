@@ -178,10 +178,29 @@ fn get_freq_chart(audio_buff : &Vec<Vec4>, vec_size : usize, use_polar : bool) -
     Ok(freq_buff)
 }
 
+use std::os::raw::c_char;
+use std::slice;
+
+#[repr(C)]
+struct Buffer {
+    data : *mut u8,
+    len : usize
+}
+
+
 fn send_pixel_packet(data : &Vec<f32>, led_num : usize) -> std::io::Result<()> {
     
     let sample_packet = make_weighted_bar_msg(data, 0, led_num).unwrap();
-    let serialized_packet = bincode::serde::serialize(&sample_packet, bincode::SizeLimit::Infinite);
+    
+    let mut packet_byte_array : vec![u8;1024];
+    for pixel in sample_packet {
+        packet_byte_array
+    }
+    // unsafe {
+    //     let array: &[c_char] = Vec<T>::from   
+
+    // }
+    // let serialized_packet = bincode::serde::serialize(&sample_packet, bincode::SizeLimit::Infinite);
     // let sample_bytes = bincode::serde::serialize(&sample_packet, bincode::SizeLimit::Infinite);
     Ok(())
 }
